@@ -1,0 +1,352 @@
+"""Jarvis server: routes each request to Haiku / Sonnet / Opus and runs the tool loop."""
+import asyncio
+import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+
+import anthropic
+from dotenv import load_dotenv
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from paths import APP_DIR, ENV_FILE, load_settings, log, save_settings
+
+load_dotenv(ENV_FILE)
+
+from tools import TOOLS, describe_action, load_memory, needs_approval, run_tool  # noqa: E402
+from voice import PRESETS, Voice, current_preset  # noqa: E402
+
+client = anthropic.Anthropic() if os.getenv("ANTHROPIC_API_KEY") else None
+MODELS = {
+    "fast": os.getenv("MODEL_FAST", "claude-haiku-5-5"),
+    "smart": os.getenv("MODEL_SMART", "claude-sonnet-5-5"),
+    "max": os.getenv("MODEL_MAX", "claude-opus-5-5"),
+}
+USER_NAME = os.getenv("USER_NAME", "Mahir")
+MAX_HISTORY = 40
+VERSION_FILE = APP_DIR / "version.json"
+
+ROUTER_PROMPT = """You pick which model should handle a request to a personal assistant.
+Reply with exactly one word:
+fast  - chit-chat, quick facts, simple one-step actions (open an app, check something, a short answer)
+smart - multi-step tasks, research, writing, editing files, anything needing several tools
+max   - hard reasoning, complex analysis, big code changes, important documents or decisions
+If unsure between two, pick the cheaper one."""
+
+# Words that mean a request is more than a quick one-step job
+HEAVY = re.compile(r"\b(research|analy[sz]e|analysis|compare|write|draft|plan|summari[sz]e|explain why|"
+                   r"code|debug|fix|build|report|essay|email to|proposal|strategy|review|calculate|"
+                   r"tell claude|ask claude|get claude)\b", re.I)
+
+app = FastAPI()
+sessions: dict = {}
+clients: set = set()
+loop = None
+recent_notices: list = []
+
+
+async def _broadcast(msg: dict):
+    for ws in list(clients):
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            clients.discard(ws)
+
+
+def emit(msg: dict):
+    if msg.get("type") == "notice":
+        recent_notices.append(msg)
+        del recent_notices[:-20]
+        log(msg["text"])
+    if loop:
+        asyncio.run_coroutine_threadsafe(_broadcast(msg), loop)
+
+
+voice = Voice(emit)
+
+
+@app.on_event("startup")
+async def _startup():
+    global loop
+    loop = asyncio.get_running_loop()
+    if os.getenv("VOICE", "true").lower() == "true":
+        voice.start()
+
+
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+    clients.add(ws)
+    for m in recent_notices:  # catch the window up on anything it missed while opening
+        await ws.send_json(m)
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        clients.discard(ws)
+
+
+def system_prompt() -> str:
+    mem = load_memory()
+    mem_text = "\n".join(f"- {m['note']}" for m in mem[-50:]) or "(nothing saved yet)"
+    p = current_preset()
+    return f"""You are {p['name']}, {USER_NAME}'s personal AI assistant, running on his Windows PC. Your manner: {p['about']}, quietly witty, never gushing.
+Now: {datetime.now().strftime('%A %d %B %Y, %I:%M %p')}. Home folder: {Path.home()}.
+
+How to behave:
+- Replies are usually read aloud, so keep them short and conversational: 1-3 sentences unless asked for detail. No markdown tables or long lists in spoken replies.
+- Plain, direct tone. Call him {USER_NAME} occasionally, not every reply. No "sir".
+- Act, don't ask: if a request is clear, use your tools and then report what you did.
+- For any action (opening, running, checking, saving), you MUST actually call a tool. Never say you did something unless a tool call in this turn did it and succeeded. If a tool errors, say so plainly.
+- Spoken input comes from speech recognition and may have small mistakes ("open spot if I" = "open Spotify"). Use common sense.
+- The PC runs Windows; use PowerShell syntax.
+- Risky actions (deleting, installing, writing files, changing settings) go to {USER_NAME} for approval automatically, so just call the tool.
+- "Tell Claude / ask Claude / get Claude to ..." means use `send_to_claude`. Claude is a separate, more capable assistant {USER_NAME} uses for bigger work (coding, documents, research). Pass on his request clearly with all useful detail; don't do the task yourself.
+- "Switch to Friday / Edith / Jarvis" means use `set_voice`.
+- If he wraps up ("that's all", "thanks"), reply with a brief sign-off.
+- Use `remember` when he tells you something lasting about himself or how he wants things done.
+
+What you know about {USER_NAME}:
+{mem_text}"""
+
+
+def pick_tier(text: str) -> str:
+    t = text.lower()
+    if re.search(r"\b(use opus|think hard|max mode)\b", t):
+        return "max"
+    if re.search(r"\b(use sonnet|smart mode)\b", t):
+        return "smart"
+    if re.search(r"\b(use haiku|quick mode)\b", t):
+        return "fast"
+    # Short, simple commands go straight to Haiku - saves a round trip
+    if len(t.split()) <= 12 and not HEAVY.search(t):
+        return "fast"
+    try:
+        r = client.messages.create(model=MODELS["fast"], max_tokens=5, system=ROUTER_PROMPT,
+                                   messages=[{"role": "user", "content": text[:2000]}])
+        word = r.content[0].text.strip().lower().split()[0]
+        return word if word in MODELS else "smart"
+    except Exception:
+        return "smart"
+
+
+def trim(messages: list) -> list:
+    """Keep recent history, cutting only at a plain user message so tool pairs stay intact."""
+    if len(messages) <= MAX_HISTORY:
+        return messages
+    for i in range(len(messages) - MAX_HISTORY, len(messages)):
+        m = messages[i]
+        if m["role"] == "user" and isinstance(m["content"], str):
+            return messages[i:]
+    return messages
+
+
+def text_of(content) -> str:
+    return "".join(getattr(b, "text", "") for b in content if getattr(b, "type", "") == "text").strip()
+
+
+def agent_loop(s: dict) -> dict:
+    """Call Claude until it gives a final answer, or pause when an action needs approval."""
+    model = MODELS[s["tier"]]
+    for _ in range(25):
+        pending = s.get("pending")
+        if pending:  # resuming after approval: finish remaining tool calls first
+            blocks, results = pending["blocks"], pending["results"]
+            s["pending"] = None
+        else:
+            s["messages"] = trim(s["messages"])
+            t0 = time.time()
+            resp = client.messages.create(model=model, max_tokens=4096, system=system_prompt(),
+                                          tools=TOOLS, messages=s["messages"])
+            s["timings"].append(f"{s['tier']} {int((time.time() - t0) * 1000)}ms")
+            s["messages"].append({"role": "assistant", "content": resp.content})
+            s["actions"] += [f"web_search({b.input.get('query', '')})" for b in resp.content
+                             if b.type == "server_tool_use"]
+            if resp.stop_reason == "pause_turn":
+                continue
+            blocks = [b for b in resp.content if b.type == "tool_use"]
+            if not blocks:
+                return {"reply": text_of(resp.content) or "Done.", "model": model, "tier": s["tier"],
+                        "actions": s["actions"]}
+            results = []
+
+        while len(results) < len(blocks):
+            b = blocks[len(results)]
+            if needs_approval(b.name, b.input) and not s.pop("approved_id", None) == b.id:
+                s["pending"] = {"blocks": blocks, "results": results}
+                return {"approval": {"id": b.id, "description": describe_action(b.name, b.input)},
+                        "model": model, "tier": s["tier"]}
+            if s.pop("denied_id", None) == b.id:
+                out = "The user declined this action. Don't retry it; ask what they'd like instead."
+            else:
+                t0 = time.time()
+                out = run_tool(b.name, b.input)
+                s["timings"].append(f"{b.name} {int((time.time() - t0) * 1000)}ms")
+                arg = next(iter(b.input.values()), "") if b.input else ""
+                s["actions"].append(f"{b.name}({str(arg)[:60]})" + (" ✗" if out.startswith("Error") else ""))
+            results.append({"type": "tool_result", "tool_use_id": b.id, "content": out})
+
+        s["messages"].append({"role": "user", "content": results})
+    return {"reply": "I hit my step limit on that one. Want me to keep going?", "model": model,
+            "tier": s["tier"]}
+
+
+def run_turn(s: dict, fn) -> dict:
+    s["timings"] = []
+    t0 = time.time()
+    if client is None:
+        return {"reply": "I need your Anthropic API key first. Paste it in the box on the right.", "tier": "fast"}
+    try:
+        res = fn()
+    except anthropic.APIError as e:
+        res = {"reply": f"Claude API error: {getattr(e, 'message', e)}", "tier": s.get("tier")}
+    total = int((time.time() - t0) * 1000)
+    log(f"timing  total {total} ms  [{', '.join(s['timings'])}]")
+    res["ms"] = total
+    return res
+
+
+class ChatIn(BaseModel):
+    session: str
+    text: str
+
+
+class ApproveIn(BaseModel):
+    session: str
+    id: str
+    approve: bool
+
+
+@app.post("/api/chat")
+def chat(body: ChatIn):
+    s = sessions.setdefault(body.session, {"messages": [], "pending": None, "tier": "smart",
+                                           "actions": [], "timings": []})
+    if s.get("pending"):  # a new message cancels an unanswered approval
+        blocks, results = s["pending"]["blocks"], s["pending"]["results"]
+        for b in blocks[len(results):]:
+            results.append({"type": "tool_result", "tool_use_id": b.id,
+                            "content": "Cancelled: the user moved on without approving."})
+        s["messages"].append({"role": "user", "content": results})
+        s["pending"] = None
+
+    def go():
+        t0 = time.time()
+        s["tier"] = pick_tier(body.text)
+        s["timings"].append(f"route {int((time.time() - t0) * 1000)}ms")
+        s["actions"] = []
+        s["messages"].append({"role": "user", "content": body.text})
+        return agent_loop(s)
+    return run_turn(s, go)
+
+
+@app.post("/api/approve")
+def approve(body: ApproveIn):
+    s = sessions.get(body.session)
+    if not s or not s.get("pending"):
+        return {"reply": "There's nothing waiting for approval."}
+    s["approved_id"] = body.id  # lets the loop pass this tool
+    if not body.approve:
+        s["denied_id"] = body.id  # ...and records it as declined instead of running it
+    return run_turn(s, lambda: agent_loop(s))
+
+
+# ---------- voice + settings ----------
+class SpeakIn(BaseModel):
+    text: str
+
+
+class PttIn(BaseModel):
+    down: bool
+
+
+class SettingsIn(BaseModel):
+    anthropic_key: str | None = None
+    voice_preset: str | None = None
+
+
+@app.post("/api/speak")
+def speak(body: SpeakIn):
+    voice.speak(body.text)
+    return {"ok": True}
+
+
+@app.post("/api/voice/ptt")
+def ptt(body: PttIn):
+    voice.ptt(body.down)
+    return {"ok": True}
+
+
+@app.post("/api/voice/listen")
+def listen():
+    voice.listen_now()
+    return {"ok": True}
+
+
+@app.post("/api/voice/stop")
+def stop_conversation():
+    voice.end_conversation()
+    return {"ok": True}
+
+
+@app.post("/api/settings")
+def settings(body: SettingsIn):
+    global client
+    if body.anthropic_key:
+        key = body.anthropic_key.strip()
+        lines = [l for l in (ENV_FILE.read_text(encoding="utf-8").splitlines() if ENV_FILE.exists() else [])
+                 if not l.startswith("ANTHROPIC_API_KEY=")]
+        ENV_FILE.write_text("\n".join([f"ANTHROPIC_API_KEY={key}"] + lines) + "\n", encoding="utf-8")
+        os.environ["ANTHROPIC_API_KEY"] = key
+        client = anthropic.Anthropic()
+    if body.voice_preset in PRESETS:
+        save_settings(voice_preset=body.voice_preset)
+    return health()
+
+
+@app.get("/api/health")
+def health():
+    v = {}
+    try:
+        import json
+        v = json.loads(VERSION_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {"ok": True, "models": MODELS, "key_set": client is not None, "voice_ready": voice.ready,
+            "preset": current_preset()["key"], "presets": list(PRESETS), "version": v.get("version", "dev")}
+
+
+@app.post("/api/update")
+def update():
+    """Check the update mirror and download new app files. Applied on restart."""
+    try:
+        import updater
+        return updater.update_app_files(APP_DIR)
+    except Exception as e:
+        return {"updated": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@app.post("/api/restart")
+def restart():
+    import sys
+    import threading
+
+    def later():
+        import subprocess
+        time.sleep(0.5)
+        args = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, sys.argv[0]]
+        subprocess.Popen(args + ["--restarted"], close_fds=True)
+        os._exit(0)
+    threading.Thread(target=later, daemon=True).start()
+    return {"ok": True}
+
+
+app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
+
+
+@app.get("/")
+def index():
+    return FileResponse(APP_DIR / "static" / "index.html")

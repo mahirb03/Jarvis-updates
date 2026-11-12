@@ -1,0 +1,34 @@
+{
+ "version": 1,
+ "min_launcher": 1,
+ "files": [
+  {
+   "path": "paths.py",
+   "sha256": "7e67a4424e230569687b9c52f1aad18f11d55ca1f96529c04673bc81688ee297"
+  },
+  {
+   "path": "server.py",
+   "sha256": "7327b3a819613b61aa654835c0c1bd14233e0c6bcb44708fa1da92bd5286fdda"
+  },
+  {
+   "path": "tools.py",
+   "sha256": "1988e236a43179c0dfeb3b3920fecb27911f7fb0e6ca988e2faff6d58b7582b0"
+  },
+  {
+   "path": "updater.py",
+   "sha256": "3aa8b0e0d9eb8c26022663bcd51af93e3d3a588539aa8ab1410136bfa09c9786"
+  },
+  {
+   "path": "voice.py",
+   "sha256": "f32fc61554ca96141c4b00bca94909266c28d73eccf48f946172608f0e08fab2"
+  },
+  {
+   "path": "static/index.html",
+   "sha256": "795750bea749473448cb618211401afcd7ed39a85292a7d6d9079ba235b17daf"
+  },
+  {
+   "path": "static/logo.png",
+   "sha256": "e6d2072c5a42a0171155fcc2d642e4c1688664c0cdcce88349e5070257dd051d"
+  }
+ ]
+}

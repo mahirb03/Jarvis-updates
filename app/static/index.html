@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S.</title>
+<link rel="icon" href="/static/logo.png">
+<style>
+  :root {
+    --bg: #05070d; --panel: rgba(14, 20, 36, .72); --line: rgba(120, 160, 255, .12);
+    --text: #e6ecff; --dim: #7c89a8; --blue: #3b82f6; --cyan: #22d3ee; --violet: #8b5cf6;
+    --amber: #f5b14a; --red: #f4677a; --green: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif; overflow: hidden; }
+  body::before { content: ""; position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(40% 35% at 30% 40%, rgba(59,130,246,.16), transparent 70%),
+      radial-gradient(35% 30% at 70% 65%, rgba(139,92,246,.12), transparent 70%),
+      radial-gradient(30% 25% at 55% 20%, rgba(34,211,238,.08), transparent 70%); }
+  .app { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 420px; height: 100%; }
+
+  /* Stage */
+  .stage { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; }
+  .top { position: absolute; top: 18px; left: 24px; right: 24px; display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .14em; font-size: 14px; }
+  .logoimg { width: 30px; height: 30px; filter: drop-shadow(0 0 10px rgba(59,130,246,.6)); }
+  .logo { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--blue), var(--violet));
+    display: grid; place-items: center; box-shadow: 0 0 18px rgba(59,130,246,.5); font-size: 13px; }
+  .chips { display: flex; gap: 8px; }
+  .chip { font-size: 12px; color: var(--dim); padding: 6px 12px; border-radius: 999px; background: var(--panel);
+    border: 1px solid var(--line); backdrop-filter: blur(12px); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  canvas#orb { width: min(520px, 70vh); height: min(520px, 70vh); cursor: pointer; }
+  .status { margin-top: 6px; font-size: 13px; letter-spacing: .32em; text-transform: uppercase;
+    background: linear-gradient(90deg, var(--blue), var(--cyan), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .heard { margin-top: 14px; font-size: 20px; max-width: 72%; text-align: center; min-height: 28px; color: #cfd8f5; }
+  .hint { position: absolute; bottom: 20px; font-size: 12px; color: var(--dim); }
+  .hint kbd { font-family: inherit; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+
+  /* Side panel */
+  .side { margin: 14px 14px 14px 0; border-radius: 18px; background: var(--panel); border: 1px solid var(--line);
+    backdrop-filter: blur(18px); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .side-head { padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; }
+  .keybox { margin: 4px 0; display: flex; gap: 6px; } .keybox input { padding: 8px 10px; font-size: 13px; }
+  .keybox button, .note button { border: 0; border-radius: 9px; padding: 6px 12px; background: var(--blue); color: #fff; cursor: pointer; }
+  .side-head .t { font-weight: 600; font-size: 14px; } .side-head .s { font-size: 12px; color: var(--dim); }
+  .toggles { margin-left: auto; display: flex; gap: 6px; }
+  .tg { font-size: 11px; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--line); color: var(--dim); cursor: pointer; user-select: none; }
+  .tg.on { color: var(--text); border-color: rgba(59,130,246,.5); background: rgba(59,130,246,.12); }
+  .log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .log::-webkit-scrollbar { width: 6px; } .log::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .msg { padding: 10px 13px; border-radius: 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; max-width: 92%; }
+  .you { align-self: flex-end; background: linear-gradient(135deg, rgba(59,130,246,.9), rgba(99,102,241,.9)); color: #fff; border-bottom-right-radius: 4px; }
+  .jarvis { align-self: flex-start; background: rgba(255,255,255,.04); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .note { align-self: center; font-size: 12px; color: var(--dim); background: none; padding: 2px 8px; text-align: center; }
+  .meta { font-size: 11px; color: var(--dim); margin-top: 6px; }
+  .tier { display: inline-block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 7px; border-radius: 6px; margin-bottom: 5px; }
+  .tier-fast { background: rgba(52,211,153,.15); color: var(--green); }
+  .tier-smart { background: rgba(59,130,246,.18); color: #8db8ff; }
+  .tier-max { background: rgba(139,92,246,.2); color: #c4a8ff; }
+  .approval { border: 1px solid rgba(245,177,74,.5); background: rgba(245,177,74,.07); }
+  .approval pre { margin: 8px 0 10px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; color: #ffd99a; }
+  .approval button { margin-right: 8px; padding: 6px 16px; border-radius: 9px; border: 0; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .yes { background: var(--blue); color: #fff; } .no { background: rgba(244,103,122,.15); color: var(--red); }
+  form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  input { flex: 1; background: rgba(255,255,255,.04); border: 1px solid var(--line); color: var(--text); padding: 11px 14px;
+    border-radius: 12px; font-size: 14px; outline: none; font-family: inherit; }
+  input:focus { border-color: rgba(59,130,246,.6); }
+  .mic { width: 44px; border-radius: 12px; border: 0; background: linear-gradient(135deg, var(--blue), var(--violet)); color: #fff; cursor: pointer; font-size: 17px; }
+  .mic.live { background: linear-gradient(135deg, var(--cyan), var(--blue)); box-shadow: 0 0 16px rgba(34,211,238,.6); }
+  @media (max-width: 1000px) { .app { grid-template-columns: 1fr; grid-template-rows: 55% 45%; } .side { margin: 0 12px 12px; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="stage">
+    <div class="top">
+      <div class="brand"><img src="/static/logo.png" class="logoimg" alt="">J.A.R.V.I.S.</div>
+      <div class="chips">
+        <div class="chip"><span class="dot" id="voiceDot"></span><span id="voiceChip">voice loading</span></div>
+        <div class="chip">model&nbsp;<b id="modelTag" style="color:var(--text)">—</b></div>
+        <div class="chip" id="clock"></div>
+      </div>
+    </div>
+    <canvas id="orb" width="700" height="700" title="Click to talk"></canvas>
+    <div class="status" id="status">standing by</div>
+    <div class="heard" id="heard"></div>
+    <div class="hint">Say <kbd>Hey Jarvis</kbd> &nbsp;·&nbsp; hold <kbd>Space</kbd> &nbsp;·&nbsp; or click the orb &nbsp;·&nbsp; <kbd>Esc</kbd> to stop listening</div>
+  </section>
+
+  <aside class="side">
+    <div class="side-head">
+      <img class="avatar" src="/static/logo.png" alt="">
+      <div><div class="t" id="pname">Jarvis</div><div class="s" id="sub">Claude <span id="ver"></span></div></div>
+      <div class="toggles">
+        <span class="tg" data-preset="jarvis">Jarvis</span><span class="tg" data-preset="friday">Friday</span><span class="tg" data-preset="edith">Edith</span>
+        <span class="tg on" id="voiceToggle" title="Speak replies out loud">🔊</span>
+        <span class="tg" id="updBtn" title="Check for updates">⟳</span>
+      </div>
+    </div>
+    <div class="log" id="log"></div>
+    <form id="form"><input id="input" placeholder="Message Jarvis…" autocomplete="off"><button type="button" class="mic" id="mic" title="Talk">🎙</button></form>
+  </aside>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const SESSION = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+let busy = false, pendingApproval = null, queued = null, speakOn = true, state = 'idle';
+
+// ================= ORB: 3D cloud of dots + HUD rings =================
+const cv = $('orb'), ctx = cv.getContext('2d');
+let W = cv.width, C = W / 2;
+function sizeCanvas() {  // render at screen size, not bigger: much lighter on the GPU
+  const px = Math.round(cv.getBoundingClientRect().width * Math.min(window.devicePixelRatio || 1, 1.25));
+  if (px > 100 && px !== cv.width) { cv.width = cv.height = px; W = px; C = px / 2; }
+}
+window.addEventListener('resize', sizeCanvas); setTimeout(sizeCanvas, 50);
+const PALETTES = {
+  idle:         [[64,190,255], [59,130,246], [139,92,246]],
+  listening:    [[34,230,255], [120,220,255], [59,130,246]],
+  transcribing: [[34,211,238], [139,92,246], [59,130,246]],
+  thinking:     [[150,110,255], [59,130,246], [217,70,239]],
+  speaking:     [[80,210,255], [34,211,238], [167,139,250]],
+  approval:     [[255,180,70], [255,120,80], [250,204,21]],
+};
+let level = 0, targetLevel = 0, t = 0, rotY = 0, rotX = 0.35;
+let cur = PALETTES.idle.map(c => c.slice());
+function rgba(c, a) { return `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`; }
+
+// Fibonacci sphere: evenly spread dots
+const N_DOTS = 950, dots = [];
+for (let i = 0; i < N_DOTS; i++) {
+  const y = 1 - (i / (N_DOTS - 1)) * 2, r = Math.sqrt(1 - y*y), th = i * 2.399963;
+  dots.push({x: Math.cos(th)*r, y, z: Math.sin(th)*r, seed: Math.random()*6.28, c: Math.random()});
+}
+// loose outer dust
+const dust = Array.from({length: 220}, () => {
+  const u = Math.random()*2-1, a = Math.random()*6.28, rr = 1.25 + Math.random()*0.9, s = Math.sqrt(1-u*u);
+  return {x: Math.cos(a)*s*rr, y: u*rr, z: Math.sin(a)*s*rr, seed: Math.random()*6.28};
+});
+
+function hudRing(r, segs, gap, width, alpha, speed, color) {
+  ctx.save(); ctx.translate(C, C); ctx.rotate(t * speed);
+  ctx.strokeStyle = rgba(color, alpha); ctx.lineWidth = width;
+  const span = (Math.PI*2) / segs;
+  for (let i = 0; i < segs; i++) { ctx.beginPath(); ctx.arc(0, 0, r, i*span, i*span + span*(1-gap)); ctx.stroke(); }
+  ctx.restore();
+}
+function ticks(r, n, len, alpha, speed, color) {
+  ctx.save(); ctx.translate(C, C); ctx.rotate(t * speed);
+  ctx.strokeStyle = rgba(color, alpha); ctx.lineWidth = 2;
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI*2, l = i % 5 === 0 ? len*2 : len;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r); ctx.lineTo(Math.cos(a)*(r+l), Math.sin(a)*(r+l)); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function draw() {
+  const target = PALETTES[state] || PALETTES.idle;
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) cur[i][j] += (target[i][j] - cur[i][j]) * 0.06;
+  if (state !== 'listening' && state !== 'speaking') targetLevel *= 0.9;
+  level += (targetLevel - level) * 0.3;
+  const busyState = state === 'thinking' || state === 'transcribing';
+  const speed = busyState ? 2.4 : state === 'idle' ? 0.55 : 1.1;
+  t += 0.016 * speed;
+  rotY += 0.004 * speed + level * 0.01;
+  rotX = 0.35 + Math.sin(t*0.3) * 0.15;
+
+  ctx.clearRect(0, 0, W, W);
+  const R = W * 0.25 * (1 + level * 0.12);
+
+  // soft glow behind the sphere
+  const g = ctx.createRadialGradient(C, C, 0, C, C, R*1.9);
+  g.addColorStop(0, rgba(cur[0], .22 + level*.25)); g.addColorStop(.55, rgba(cur[2], .06)); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, W);
+
+  // HUD rings
+  hudRing(R*1.55, 3, .25, 3, .35 + level*.4, 0.25, cur[0]);
+  hudRing(R*1.68, 24, .45, 6, .25, -0.12, cur[1]);
+  ticks(R*1.76, 120, 8, .22, 0.05, cur[0]);
+  hudRing(R*1.88, 2, .6, 2, .3, -0.35 * (busyState ? 3 : 1), cur[2]);
+  if (busyState) hudRing(R*1.42, 1, .75, 4, .7, 2.2, cur[0]);
+
+  // project + draw dots (back to front)
+  const cy = Math.cos(rotY), sy = Math.sin(rotY), cx = Math.cos(rotX), sx = Math.sin(rotX);
+  const pts = [];
+  const push = (d, scaleBase, isDust) => {
+    // displacement: breathing + voice-driven waves
+    const wave = Math.sin(d.y*6 + t*3 + d.seed) * 0.5 + Math.sin(d.x*5 - t*2.2) * 0.5;
+    const disp = isDust ? 1 + Math.sin(t + d.seed)*0.05
+      : 1 + 0.025*Math.sin(t*1.5 + d.seed) + level * (0.18 * wave + 0.12) + (busyState ? 0.04*Math.sin(d.y*10 + t*6) : 0);
+    let x = d.x*disp, y = d.y*disp, z = d.z*disp;
+    const x1 = x*cy - z*sy, z1 = x*sy + z*cy;           // rotate Y
+    const y1 = y*cx - z1*sx, z2 = y*sx + z1*cx;          // rotate X
+    const p = 2.6 / (2.6 + z2);                           // perspective
+    pts.push({sx: C + x1*R*p, sy: C + y1*R*p, z: z2, p, c: d.c ?? .5, dust: isDust});
+  };
+  for (const d of dots) push(d, 1, false);
+  for (const d of dust) push(d, 1, true);
+  // (no sorting needed: additive blending looks the same in any order)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const q of pts) {
+    const depth = (1 - q.z) / 2;                          // 0 back .. 1 front
+    const col = q.c < .55 ? cur[0] : q.c < .85 ? cur[1] : cur[2];
+    const a = q.dust ? 0.12 + depth*0.25 : 0.15 + depth*0.75;
+    const size = (q.dust ? 1.2 : 1.4 + depth*2.2) * q.p * (1 + level*0.4) * (W / 1040);
+    ctx.fillStyle = rgba(col, a);
+    ctx.fillRect(q.sx - size/2, q.sy - size/2, size, size);
+  }
+  // bright core
+  const core = ctx.createRadialGradient(C, C, 0, C, C, R*0.55);
+  core.addColorStop(0, rgba([255,255,255], .25 + level*.35)); core.addColorStop(.4, rgba(cur[0], .12 + level*.2)); core.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(C, C, R*0.55, 0, Math.PI*2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  requestAnimationFrame(draw);
+}
+draw();
+
+// ================= UI =================
+const LABELS = {idle: 'standing by', listening: 'listening', transcribing: 'hearing you', thinking: 'thinking', speaking: 'speaking', approval: 'awaiting approval'};
+function setState(s) {
+  state = s; $('status').textContent = LABELS[s] || s;
+  $('mic').classList.toggle('live', s === 'listening');
+  if (s === 'idle' || s === 'thinking') $('heard').textContent = s === 'thinking' ? $('heard').textContent : '';
+}
+function addMsg(cls, text) {
+  const d = document.createElement('div'); d.className = 'msg ' + cls;
+  const body = document.createElement('div'); body.textContent = text; d.appendChild(body);
+  $('log').appendChild(d); $('log').scrollTop = 1e9; return d;
+}
+setInterval(() => $('clock').textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}), 1000);
+$('voiceToggle').onclick = e => { speakOn = !speakOn; e.target.classList.toggle('on', speakOn); };
+
+async function post(url, body) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+  return r.json();
+}
+function say(text) { if (speakOn && text) post('/api/speak', {text}); else setState(pendingApproval ? 'approval' : 'idle'); }
+
+function handle(res) {
+  if (res.tier) $('modelTag').innerHTML = `<span class="tier tier-${res.tier}" style="margin:0">${res.tier}</span>`;
+  if (res.approval) {
+    pendingApproval = res.approval;
+    const d = addMsg('jarvis approval', '');
+    d.innerHTML = `<div class="meta" style="margin:0 0 4px">Needs your OK</div><pre></pre><button class="yes">Approve</button><button class="no">Deny</button>`;
+    d.querySelector('pre').textContent = res.approval.description;
+    d.querySelector('.yes').onclick = () => answerApproval(true);
+    d.querySelector('.no').onclick = () => answerApproval(false);
+    setState('approval');
+    say('I need your OK for this one. Yes or no?');
+    return;
+  }
+  pendingApproval = null;
+  const d = addMsg('jarvis', '');
+  d.innerHTML = res.tier ? `<span class="tier tier-${res.tier}">${res.tier}</span>` : '';
+  const body = document.createElement('div'); body.textContent = res.reply || '(no reply)'; d.appendChild(body);
+  if (res.actions && res.actions.length) {
+    const a = document.createElement('div'); a.className = 'meta'; a.textContent = 'ran: ' + res.actions.join(' · '); d.appendChild(a);
+  }
+  if (res.ms) {
+    const m = document.createElement('div'); m.className = 'meta'; m.textContent = (res.ms/1000).toFixed(1) + 's'; d.appendChild(m);
+  }
+  $('log').scrollTop = 1e9;
+  setState('idle');
+  say(res.reply);
+}
+
+async function send(text) {
+  text = (text || '').trim(); if (!text) return;
+  if (pendingApproval && /^(yes|yeah|yep|yup|do it|go ahead|approve|ok|okay|sure|confirm)\b/i.test(text)) return answerApproval(true);
+  if (pendingApproval && /^(no|nope|don't|do not|cancel|deny|stop)\b/i.test(text)) return answerApproval(false);
+  if (busy) { queued = text; addMsg('note', `queued: "${text}"`); return; }
+  addMsg('you', text); $('heard').textContent = text;
+  busy = true; setState('thinking');
+  try { handle(await post('/api/chat', {session: SESSION, text})); }
+  catch (e) { addMsg('note', 'Lost connection to the Jarvis server.'); setState('idle'); }
+  busy = false;
+  if (queued) { const q = queued; queued = null; send(q); }
+}
+async function answerApproval(ok) {
+  if (!pendingApproval) return;
+  const id = pendingApproval.id; pendingApproval = null;
+  document.querySelectorAll('.approval button').forEach(b => b.disabled = true);
+  addMsg('you', ok ? 'Approved' : 'Denied');
+  busy = true; setState('thinking');
+  try { handle(await post('/api/approve', {session: SESSION, id, approve: ok})); }
+  catch (e) { addMsg('note', 'Lost connection to the Jarvis server.'); setState('idle'); }
+  busy = false;
+}
+$('form').onsubmit = e => { e.preventDefault(); send($('input').value); $('input').value = ''; };
+
+// ================= Voice (runs in the Jarvis app, not the browser) =================
+let pttHeld = false;
+function pttDown() { if (pttHeld) return; pttHeld = true; post('/api/voice/ptt', {down: true}); }
+function pttUp() { if (!pttHeld) return; pttHeld = false; post('/api/voice/ptt', {down: false}); }
+document.addEventListener('keydown', e => { if (e.code === 'Space' && document.activeElement !== $('input')) { e.preventDefault(); if (!e.repeat) pttDown(); } });
+document.addEventListener('keyup', e => { if (e.code === 'Space' && document.activeElement !== $('input')) { e.preventDefault(); pttUp(); } });
+// click = start talking, click again = done
+const clickTalk = () => pttHeld ? pttUp() : pttDown();
+$('mic').onclick = clickTalk; $('orb').onclick = clickTalk;
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'level') targetLevel = m.v;
+    else if (m.type === 'state') {
+      if (m.state === 'idle' && (busy || pendingApproval)) setState(pendingApproval ? 'approval' : 'thinking');
+      else if (!busy || m.state !== 'idle') setState(m.state);
+      if (m.state !== 'listening') pttHeld = false;
+    }
+    else if (m.type === 'heard') { pttHeld = false; send(m.text); }
+    else if (m.type === 'speak_done') { if (!busy) setState(pendingApproval ? 'approval' : 'idle'); }
+    else if (m.type === 'notice') {
+      addMsg('note', m.text);
+      if (/Voice ready/.test(m.text)) { $('voiceDot').classList.add('on'); $('voiceChip').textContent = 'voice on'; }
+      if (/Voice stopped/.test(m.text)) { $('voiceChip').textContent = 'voice off'; }
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 1500);
+}
+connect();
+
+function showHealth(h) {
+  $('ver').textContent = h.version && h.version !== 'dev' ? '· v' + h.version : '· dev';
+  document.querySelectorAll('[data-preset]').forEach(el => el.classList.toggle('on', el.dataset.preset === h.preset));
+  $('pname').textContent = h.preset ? h.preset[0].toUpperCase() + h.preset.slice(1) : 'Jarvis';
+  if (h.voice_ready) { $('voiceDot').classList.add('on'); $('voiceChip').textContent = 'voice on'; }
+  if (!h.key_set && !document.querySelector('.keybox')) {
+    const d = addMsg('note', 'Paste your Anthropic API key to get started (it stays on this PC):');
+    const k = document.createElement('div'); k.className = 'keybox';
+    k.innerHTML = '<input type="password" placeholder="sk-ant-..."><button>Save</button>';
+    k.querySelector('button').onclick = async () => {
+      const v = k.querySelector('input').value.trim(); if (!v) return;
+      showHealth(await post('/api/settings', {anthropic_key: v})); d.remove(); addMsg('note', 'Key saved. Ready.');
+    };
+    d.appendChild(k);
+  }
+}
+document.querySelectorAll('[data-preset]').forEach(el => el.onclick = async () => {
+  showHealth(await post('/api/settings', {voice_preset: el.dataset.preset}));
+  say(`${el.textContent} online.`);
+});
+$('updBtn').onclick = async () => {
+  addMsg('note', 'Checking for updates…');
+  const r = await post('/api/update');
+  if (r.updated) {
+    const d = addMsg('note', `Updated to v${r.version}. `);
+    const b = document.createElement('button'); b.textContent = 'Restart now';
+    b.onclick = () => { post('/api/restart'); addMsg('note', 'Restarting…'); };
+    d.appendChild(b);
+  } else if (r.needs_installer) addMsg('note', 'This update needs the new installer: ' + r.url);
+  else addMsg('note', r.reason || r.error || 'No update.');
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { post('/api/voice/stop'); setState('idle'); } });
+fetch('/api/health').then(r => r.json()).then(showHealth);
+setState('idle');
+</script>
+</body>
+</html>
