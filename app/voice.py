@@ -118,13 +118,32 @@ class Voice:
             self.ww = None
             self.emit({"type": "notice", "text": f"Wake word unavailable ({type(e).__name__}: {e}). "
                                                  "Hold Space or click the orb to talk."})
-        from faster_whisper import WhisperModel
-        device = os.getenv("WHISPER_DEVICE", "cpu")
-        self.stt = WhisperModel(os.getenv("WHISPER_MODEL", "base.en"), device=device,
-                                compute_type="int8" if device == "cpu" else "float16")
+        self.stt = self._load_whisper()
         self.ready = True
         hint = 'Say "Hey Jarvis", or hold Space.' if self.ww else "Hold Space or click the orb to talk."
         self.emit({"type": "notice", "text": f"Voice ready. {hint}"})
+
+    def _load_whisper(self):
+        """Download Whisper into Jarvis's own folder as real files (the shared Hugging Face cache uses
+        symlinks, which break on Windows without Developer Mode). If a copy is damaged, fetch it fresh."""
+        import shutil
+        from faster_whisper import WhisperModel
+        from faster_whisper.utils import download_model
+        from paths import DATA_DIR
+        name = os.getenv("WHISPER_MODEL", "base.en")
+        device = os.getenv("WHISPER_DEVICE", "cpu")
+        folder = DATA_DIR / "models" / f"whisper-{name}"
+
+        def load():
+            path = download_model(name, output_dir=str(folder))
+            return WhisperModel(path, device=device, compute_type="int8" if device == "cpu" else "float16")
+        try:
+            return load()
+        except Exception as e:
+            log(f"whisper load failed ({type(e).__name__}: {e}); re-downloading")
+            self.emit({"type": "notice", "text": "Speech model was damaged. Downloading a fresh copy..."})
+            shutil.rmtree(folder, ignore_errors=True)
+            return load()
 
     # ---------- controls from the UI ----------
     def ptt(self, down: bool):
