@@ -1,18 +1,22 @@
 {
- "version": 1,
+ "version": 2,
  "min_launcher": 1,
  "files": [
+  {
+   "path": "gapps.py",
+   "sha256": "2d3576c42a277cbb6753713036f2156aee44243fd913a506a98096c45263deb2"
+  },
   {
    "path": "paths.py",
    "sha256": "7e67a4424e230569687b9c52f1aad18f11d55ca1f96529c04673bc81688ee297"
   },
   {
    "path": "server.py",
-   "sha256": "7327b3a819613b61aa654835c0c1bd14233e0c6bcb44708fa1da92bd5286fdda"
+   "sha256": "bcf4cf83ef9bbd80d71cbe3fbf34e8cd5b7dc6d1210e1390d64325b6d78d0c7a"
   },
   {
    "path": "tools.py",
-   "sha256": "1988e236a43179c0dfeb3b3920fecb27911f7fb0e6ca988e2faff6d58b7582b0"
+   "sha256": "07096e3e3fe82b6aa9a88f8b36cbf33519f3d1b747d57a60e92c1848d1f3c8f3"
   },
   {
    "path": "updater.py",
@@ -24,7 +28,7 @@
   },
   {
    "path": "static/index.html",
-   "sha256": "795750bea749473448cb618211401afcd7ed39a85292a7d6d9079ba235b17daf"
+   "sha256": "75f0bc411ae3ffbf9d4c2b744393bffc195f46c6a7256a00692ae3bdbf02f0ee"
   },
   {
    "path": "static/logo.png",

@@ -83,6 +83,62 @@ TOOLS = [
             "preset": {"type": "string", "enum": ["jarvis", "friday", "edith"]}}, "required": ["preset"]},
     },
     {
+        "name": "gmail_search",
+        "description": "Search Gmail with Gmail search syntax (e.g. 'from:architect newer_than:7d', 'is:unread', "
+                       "'subject:BOQ'). account = 'personal', 'work', or an email; omit for the first account.",
+        "input_schema": {"type": "object", "properties": {
+            "query": {"type": "string"}, "account": {"type": "string"},
+            "max_results": {"type": "integer"}}, "required": ["query"]},
+    },
+    {
+        "name": "gmail_read",
+        "description": "Read one email in full by its message id (from gmail_search).",
+        "input_schema": {"type": "object", "properties": {
+            "message_id": {"type": "string"}, "account": {"type": "string"}}, "required": ["message_id"]},
+    },
+    {
+        "name": "gmail_draft",
+        "description": "Save an email as a Gmail draft (does NOT send). For replies pass reply_to_message_id; "
+                       "to/subject can then be left blank. Write in the user's plain, direct tone.",
+        "input_schema": {"type": "object", "properties": {
+            "to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"},
+            "cc": {"type": "string"}, "account": {"type": "string"},
+            "reply_to_message_id": {"type": "string"}}, "required": ["body"]},
+    },
+    {
+        "name": "gmail_send",
+        "description": "Send an email. ONLY when the user explicitly says to send. Prefer sending a draft by "
+                       "draft_id; otherwise give to + subject + body. The user is always asked to approve.",
+        "input_schema": {"type": "object", "properties": {
+            "draft_id": {"type": "string"}, "to": {"type": "string"}, "subject": {"type": "string"},
+            "body": {"type": "string"}, "account": {"type": "string"}}},
+    },
+    {
+        "name": "calendar_list",
+        "description": "List calendar events between start and end (ISO date or datetime, local time). "
+                       "Omit account to check all connected calendars. Defaults to the next 7 days.",
+        "input_schema": {"type": "object", "properties": {
+            "start": {"type": "string"}, "end": {"type": "string"}, "account": {"type": "string"},
+            "query": {"type": "string"}}},
+    },
+    {
+        "name": "calendar_add",
+        "description": "Add a calendar event. start/end as local ISO datetimes (e.g. 2026-11-16T11:00). "
+                       "end defaults to 1 hour after start. The user approves before it's added.",
+        "input_schema": {"type": "object", "properties": {
+            "summary": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"},
+            "account": {"type": "string"}, "location": {"type": "string"}, "description": {"type": "string"},
+            "attendees": {"type": "string", "description": "comma-separated emails (Google emails them invites)"}},
+            "required": ["summary", "start"]},
+    },
+    {
+        "name": "calendar_move",
+        "description": "Move an event (event id from calendar_list) to a new start; keeps its length unless end is given.",
+        "input_schema": {"type": "object", "properties": {
+            "event_id": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"},
+            "account": {"type": "string"}}, "required": ["event_id", "start"]},
+    },
+    {
         "name": "remember",
         "description": "Save a lasting fact or preference about the user for future conversations.",
         "input_schema": {"type": "object", "properties": {
@@ -95,7 +151,13 @@ def _cap(text: str) -> str:
     return text if len(text) <= MAX_OUT else text[:MAX_OUT] + f"\n...[cut, {len(text)} chars total]"
 
 
+GOOGLE_TOOLS = {"gmail_search", "gmail_read", "gmail_draft", "gmail_send",
+                "calendar_list", "calendar_add", "calendar_move"}
+
+
 def needs_approval(name: str, args: dict) -> bool:
+    if name in ("gmail_send", "calendar_add", "calendar_move"):
+        return True  # always ask, even with AUTO_APPROVE_ALL
     if os.getenv("AUTO_APPROVE_ALL", "").lower() == "true":
         return False
     if name == "write_file":
@@ -109,6 +171,17 @@ def needs_approval(name: str, args: dict) -> bool:
 
 
 def describe_action(name: str, args: dict) -> str:
+    acct = f" ({args['account']})" if args.get("account") else ""
+    if name == "gmail_send":
+        if args.get("draft_id"):
+            return f"Send draft {args['draft_id']}{acct}"
+        return f"Send email{acct}\nTo: {args.get('to')}\nSubject: {args.get('subject')}\n\n{args.get('body', '')[:600]}"
+    if name == "calendar_add":
+        extra = f"\nWhere: {args['location']}" if args.get("location") else ""
+        inv = f"\nInvites: {args['attendees']}" if args.get("attendees") else ""
+        return f"Add to calendar{acct}: {args.get('summary')}\nWhen: {args.get('start')} to {args.get('end') or '+1h'}{extra}{inv}"
+    if name == "calendar_move":
+        return f"Move event {args.get('event_id')}{acct} to {args.get('start')}"
     if name == "run_powershell":
         return f"Run this command:\n{args.get('command')}"
     if name == "write_file":
@@ -163,6 +236,10 @@ def run_tool(name: str, args: dict) -> str:
 
         if name == "send_to_claude":
             return send_to_claude(args["message"], args.get("send", True))
+
+        if name in GOOGLE_TOOLS:
+            import gapps
+            return _cap(getattr(gapps, name)(**args))
 
         if name == "set_voice":
             save_settings(voice_preset=args["preset"])

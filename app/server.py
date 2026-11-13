@@ -9,7 +9,7 @@ from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -110,8 +110,21 @@ How to behave:
 - If he wraps up ("that's all", "thanks"), reply with a brief sign-off.
 - Use `remember` when he tells you something lasting about himself or how he wants things done.
 
+Google accounts connected (Gmail + Calendar): {_google_accounts()}
+- Email: search/read freely; save replies as drafts. Only use gmail_send when he explicitly says to send.
+- Calendar: times are local ({os.getenv('TIMEZONE', 'Asia/Kolkata')}). Check calendar_list before suggesting a slot.
+
 What you know about {USER_NAME}:
 {mem_text}"""
+
+
+def _google_accounts() -> str:
+    try:
+        import gapps
+        a = gapps.status()["accounts"]
+        return ", ".join(f"{x['email']} ({x['label']})" for x in a) or "none yet"
+    except Exception:
+        return "none yet"
 
 
 def pick_tier(text: str) -> str:
@@ -342,6 +355,59 @@ def restart():
         os._exit(0)
     threading.Thread(target=later, daemon=True).start()
     return {"ok": True}
+
+
+# ---------- Google ----------
+class GoogleClientIn(BaseModel):
+    json_text: str
+
+
+@app.get("/api/google")
+def google_status():
+    import gapps
+    return gapps.status()
+
+
+@app.post("/api/google/client")
+def google_client(body: GoogleClientIn):
+    import gapps
+    try:
+        gapps.save_client(body.json_text)
+        return {"ok": True, **gapps.status()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/google/connect")
+def google_connect():
+    """Opens Google sign-in in the default browser."""
+    import gapps
+    try:
+        url = gapps.auth_url()
+        if os.name == "nt":
+            os.startfile(url)
+        else:
+            import webbrowser
+            webbrowser.open(url)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/oauth/google/callback")
+def google_callback(code: str = "", state: str = "", error: str = ""):
+    import gapps
+    page = ("<html><body style='background:#05070d;color:#e6ecff;font-family:Segoe UI;display:grid;"
+            "place-items:center;height:100vh'><div style='text-align:center'><h2>{}</h2><p>{}</p></div></body></html>")
+    if error:
+        return HTMLResponse(page.format("Google sign-in cancelled", error))
+    try:
+        email = gapps.finish_auth(code, state)
+        emit({"type": "notice", "text": f"Google connected: {email}"})
+        emit({"type": "google"})
+        return HTMLResponse(page.format(f"Connected {email}", "You can close this tab and go back to Jarvis."))
+    except Exception as e:
+        return HTMLResponse(page.format("Couldn't connect", str(e)))
 
 
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
