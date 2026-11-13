@@ -228,6 +228,10 @@ def run_turn(s: dict, fn) -> dict:
 class ChatIn(BaseModel):
     session: str
     text: str
+    client: str | None = None  # the current app sends "jarvis-app"; old browser tabs don't
+
+OLD_TAB = {"reply": "This is an old Jarvis browser tab. Please close it. Jarvis now runs in its own window.",
+           "tier": "fast"}
 
 
 class ApproveIn(BaseModel):
@@ -238,6 +242,8 @@ class ApproveIn(BaseModel):
 
 @app.post("/api/chat")
 def chat(body: ChatIn):
+    if body.client != "jarvis-app":
+        return OLD_TAB
     s = sessions.setdefault(body.session, {"messages": [], "pending": None, "tier": "smart",
                                            "actions": [], "timings": []})
     if s.get("pending"):  # a new message cancels an unanswered approval

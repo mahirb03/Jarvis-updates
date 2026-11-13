@@ -281,7 +281,7 @@ async function send(text) {
   if (busy) { queued = text; addMsg('note', `queued: "${text}"`); return; }
   addMsg('you', text); $('heard').textContent = text;
   busy = true; setState('thinking');
-  try { handle(await post('/api/chat', {session: SESSION, text})); }
+  try { handle(await post('/api/chat', {session: SESSION, text, client: 'jarvis-app'})); }
   catch (e) { addMsg('note', 'Lost connection to the Jarvis server.'); setState('idle'); }
   busy = false;
   if (queued) { const q = queued; queued = null; send(q); }

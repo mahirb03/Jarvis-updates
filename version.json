@@ -1,5 +1,5 @@
 {
- "version": 5,
+ "version": 6,
  "min_launcher": 1,
  "files": [
   {
@@ -16,7 +16,7 @@
   },
   {
    "path": "server.py",
-   "sha256": "a9fb2e6f0260d23b967a4ff646a9a67851566e83a7e65dd3a2040fecd40d74fd"
+   "sha256": "a7a13e7c0028f5e98e0765173471f0dff8c5775bf801fe1b2c6e9336e2bf9b68"
   },
   {
    "path": "tools.py",
@@ -32,7 +32,7 @@
   },
   {
    "path": "static/index.html",
-   "sha256": "75f0bc411ae3ffbf9d4c2b744393bffc195f46c6a7256a00692ae3bdbf02f0ee"
+   "sha256": "e46e45f477fde9a3a8ae7b4ad720bc003b319a798f5073535897aca6582f14a3"
   },
   {
    "path": "static/logo.png",
