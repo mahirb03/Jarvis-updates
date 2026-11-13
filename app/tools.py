@@ -256,32 +256,76 @@ def run_tool(name: str, args: dict) -> str:
         return f"Error: {type(e).__name__}: {e}"
 
 
+def _claude_windows() -> list:
+    """Visible top-level windows that belong to Claude.exe (the app runs several window-less helper processes)."""
+    import ctypes
+    import win32gui
+    import win32process
+    k32 = ctypes.windll.kernel32
+    found = []
+
+    def exe_of(pid):
+        h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            size = ctypes.c_ulong(1024)
+            ok = k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size))
+            return buf.value if ok else ""
+        finally:
+            k32.CloseHandle(h)
+
+    def cb(hwnd, _):
+        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            if exe_of(pid).lower().endswith("\\claude.exe"):
+                l, t, r, b = win32gui.GetWindowRect(hwnd)
+                found.append((hwnd, (r - l) * (b - t)))
+        return True
+    win32gui.EnumWindows(cb, None)
+    return [h for h, _ in sorted(found, key=lambda x: -x[1])]  # biggest window first = the main one
+
+
+def _focus(hwnd):
+    import win32api
+    import win32con
+    import win32gui
+    if win32gui.IsIconic(hwnd):
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    # Windows only lets a program steal focus right after a key press, so tap Alt first
+    win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+    win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+    try:
+        win32gui.SetForegroundWindow(hwnd)
+    except Exception:
+        win32gui.BringWindowToTop(hwnd)
+
+
 def send_to_claude(message: str, send: bool = True) -> str:
     """Paste a message into the Claude desktop app's chat box and (optionally) press Enter."""
     import time
     import win32clipboard as cb
-    from pywinauto import Application, keyboard, mouse
+    import win32gui
+    from pywinauto import keyboard, mouse
 
-    try:
-        app = Application(backend="uia").connect(path="claude.exe", timeout=3)
-    except Exception:
-        return "Error: the Claude desktop app isn't open. Open it on the chat you want, then try again."
-    win = app.top_window()
-    if win.is_minimized():
-        win.restore()
-    win.set_focus()
-    time.sleep(0.6)
+    wins = _claude_windows()
+    if not wins:
+        return ("Error: I can't see a Claude app window. If it's closed or hidden in the system tray, "
+                "open it on the chat you want and ask again.")
+    hwnd = wins[0]
+    _focus(hwnd)
+    time.sleep(0.7)
 
-    # Put the message on the clipboard (handles long text and any characters)
     cb.OpenClipboard()
     cb.EmptyClipboard()
     cb.SetClipboardText(message, cb.CF_UNICODETEXT)
     cb.CloseClipboard()
 
-    # Click into the message box: it sits at the bottom-centre of the window
-    r = win.rectangle()
+    # The message box sits at the bottom-centre of the window
+    l, t, r, b = win32gui.GetWindowRect(hwnd)
     offset = int(os.getenv("CLAUDE_INPUT_OFFSET", "110"))
-    mouse.click(coords=((r.left + r.right) // 2, r.bottom - offset))
+    mouse.click(coords=((l + r) // 2, b - offset))
     time.sleep(0.3)
     keyboard.send_keys("^v")
     time.sleep(0.4)
