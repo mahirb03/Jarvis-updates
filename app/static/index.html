@@ -101,7 +101,7 @@
       <div class="toggles">
         <span class="tg" data-preset="jarvis">Jarvis</span><span class="tg" data-preset="friday">Friday</span><span class="tg" data-preset="edith">Edith</span>
         <span class="tg on" id="voiceToggle" title="Speak replies out loud">🔊</span>
-        <span class="tg" id="gBtn" title="Gmail & Calendar">✉</span>
+        <span class="tg" id="gBtn" title="Accounts: Gmail, Calendar, To Do">✉</span>
         <span class="tg" id="updBtn" title="Check for updates">⟳</span>
       </div>
     </div>
@@ -352,26 +352,44 @@ document.querySelectorAll('[data-preset]').forEach(el => el.onclick = async () =
   say(`${el.textContent} online.`);
 });
 async function googlePanel() {
-  const g = await (await fetch('/api/google')).json();
+  const [g, m] = await Promise.all([fetch('/api/google').then(r => r.json()), fetch('/api/microsoft').then(r => r.json())]);
   document.querySelectorAll('.gpanel').forEach(x => x.remove());
-  const d = addMsg('note gpanel', 'Gmail & Calendar');
-  const box = document.createElement('div'); box.className = 'gbox';
+  const d = addMsg('note gpanel', 'Accounts');
+  const list = a => a.length ? a.map(x => `✓ ${x.email} (${x.label})`).join('\n') : 'None connected yet.';
+
+  // Google: Gmail + Calendar
+  const gb = document.createElement('div'); gb.className = 'gbox';
   if (!g.client) {
-    box.innerHTML = '<div>Paste the Google OAuth client JSON (Desktop app) here:</div><textarea placeholder="{&quot;installed&quot;: {&quot;client_id&quot;: ...}}"></textarea><button>Save</button>';
-    box.querySelector('button').onclick = async () => {
-      const r = await post('/api/google/client', {json_text: box.querySelector('textarea').value});
-      if (r.ok) googlePanel(); else addMsg('note', r.error);
+    gb.innerHTML = '<b>Gmail & Calendar</b><div>Paste the Google OAuth client JSON (Desktop app):</div><textarea></textarea><button>Save</button>';
+    gb.querySelector('button').onclick = async () => {
+      const r = await post('/api/google/client', {json_text: gb.querySelector('textarea').value});
+      r.ok ? googlePanel() : addMsg('note', r.error);
     };
   } else {
-    const list = g.accounts.length ? g.accounts.map(a => `✓ ${a.email} (${a.label})`).join('\n') : 'No accounts connected yet.';
-    box.innerHTML = '<div style="white-space:pre-wrap"></div><button>Connect a Google account</button>';
-    box.querySelector('div').textContent = list;
-    box.querySelector('button').onclick = async () => {
+    gb.innerHTML = '<b>Gmail & Calendar</b><div style="white-space:pre-wrap"></div><button>Connect a Google account</button>';
+    gb.querySelector('div').textContent = list(g.accounts);
+    gb.querySelector('button').onclick = async () => {
       const r = await post('/api/google/connect');
-      addMsg('note', r.ok ? 'Sign-in opened in your browser. Pick the account and allow access.' : r.error);
+      addMsg('note', r.ok ? 'Google sign-in opened in your browser.' : r.error);
     };
   }
-  d.appendChild(box); $('log').scrollTop = 1e9;
+  // Microsoft: To Do
+  const mb = document.createElement('div'); mb.className = 'gbox';
+  if (!m.client) {
+    mb.innerHTML = '<b>Microsoft To Do</b><div>Paste the Jarvis app\'s Application (client) ID:</div><input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"><button>Save</button>';
+    mb.querySelector('button').onclick = async () => {
+      const r = await post('/api/microsoft/client', {client_id: mb.querySelector('input').value});
+      r.ok ? googlePanel() : addMsg('note', r.error);
+    };
+  } else {
+    mb.innerHTML = '<b>Microsoft To Do</b><div style="white-space:pre-wrap"></div><button>Connect a Microsoft account</button>';
+    mb.querySelector('div').textContent = list(m.accounts);
+    mb.querySelector('button').onclick = async () => {
+      const r = await post('/api/microsoft/connect');
+      addMsg('note', r.ok ? 'Microsoft sign-in opened in your browser.' : r.error);
+    };
+  }
+  d.appendChild(gb); d.appendChild(mb); $('log').scrollTop = 1e9;
 }
 $('gBtn').onclick = googlePanel;
 $('updBtn').onclick = async () => {

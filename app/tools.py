@@ -139,6 +139,30 @@ TOOLS = [
             "account": {"type": "string"}}, "required": ["event_id", "start"]},
     },
     {
+        "name": "todo_list",
+        "description": "Show open Microsoft To Do tasks. Omit list_name for all lists; omit account for all "
+                       "accounts ('personal' / 'work' / an email).",
+        "input_schema": {"type": "object", "properties": {
+            "list_name": {"type": "string"}, "account": {"type": "string"},
+            "include_done": {"type": "boolean"}}},
+    },
+    {
+        "name": "todo_add",
+        "description": "Add a Microsoft To Do task. due = local date or datetime (2026-11-16). Default list if "
+                       "list_name is omitted; default account is the first connected.",
+        "input_schema": {"type": "object", "properties": {
+            "title": {"type": "string"}, "list_name": {"type": "string"}, "account": {"type": "string"},
+            "due": {"type": "string"}, "notes": {"type": "string"}, "important": {"type": "boolean"}},
+            "required": ["title"]},
+    },
+    {
+        "name": "todo_complete",
+        "description": "Tick off a Microsoft To Do task by its id (from todo_list).",
+        "input_schema": {"type": "object", "properties": {
+            "task_id": {"type": "string"}, "list_name": {"type": "string"}, "account": {"type": "string"}},
+            "required": ["task_id"]},
+    },
+    {
         "name": "remember",
         "description": "Save a lasting fact or preference about the user for future conversations.",
         "input_schema": {"type": "object", "properties": {
@@ -236,6 +260,10 @@ def run_tool(name: str, args: dict) -> str:
 
         if name == "send_to_claude":
             return send_to_claude(args["message"], args.get("send", True))
+
+        if name in ("todo_list", "todo_add", "todo_complete"):
+            import mstodo
+            return _cap(getattr(mstodo, name)(**args))
 
         if name in GOOGLE_TOOLS:
             import gapps

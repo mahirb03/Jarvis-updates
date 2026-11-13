@@ -1,5 +1,5 @@
 {
- "version": 6,
+ "version": 7,
  "min_launcher": 1,
  "files": [
   {
@@ -11,16 +11,20 @@
    "sha256": "2d3576c42a277cbb6753713036f2156aee44243fd913a506a98096c45263deb2"
   },
   {
+   "path": "mstodo.py",
+   "sha256": "2927f4dbf371d09c8aa90911fcd402bd89ba7cef27c77229dd4cb1a2d5c7f954"
+  },
+  {
    "path": "paths.py",
    "sha256": "7e67a4424e230569687b9c52f1aad18f11d55ca1f96529c04673bc81688ee297"
   },
   {
    "path": "server.py",
-   "sha256": "a7a13e7c0028f5e98e0765173471f0dff8c5775bf801fe1b2c6e9336e2bf9b68"
+   "sha256": "4b86b8183d2f9dbcf89f613eeaa082a1543b83e187f9d4c927943595ea596177"
   },
   {
    "path": "tools.py",
-   "sha256": "7726788c30558529dac94b5e42fa61e12b60eaf9685dbc102b3532c91032311f"
+   "sha256": "afb5a9821a4d5cad29d61ea43f7657ca19298c5ad8b3b5af9d5b8e47d95a636c"
   },
   {
    "path": "updater.py",
@@ -32,7 +36,7 @@
   },
   {
    "path": "static/index.html",
-   "sha256": "e46e45f477fde9a3a8ae7b4ad720bc003b319a798f5073535897aca6582f14a3"
+   "sha256": "a67848037b7810d15001edcf3659e207d78f7b2b23c87a9fda62a4d7ce505a4a"
   },
   {
    "path": "static/logo.png",

@@ -114,6 +114,8 @@ How to behave:
 
 Google accounts connected (Gmail + Calendar): {_google_accounts()}
 - Email: search/read freely; save replies as drafts. Only use gmail_send when he explicitly says to send.
+Microsoft To Do accounts connected: {_ms_accounts()}
+- "My to-dos / add to my list / tick off" means Microsoft To Do (todo_* tools).
 - Calendar: times are local ({os.getenv('TIMEZONE', 'Asia/Kolkata')}). Check calendar_list before suggesting a slot.
 
 What you know about {USER_NAME}:
@@ -124,6 +126,15 @@ def _google_accounts() -> str:
     try:
         import gapps
         a = gapps.status()["accounts"]
+        return ", ".join(f"{x['email']} ({x['label']})" for x in a) or "none yet"
+    except Exception:
+        return "none yet"
+
+
+def _ms_accounts() -> str:
+    try:
+        import mstodo
+        a = mstodo.status()["accounts"]
         return ", ".join(f"{x['email']} ({x['label']})" for x in a) or "none yet"
     except Exception:
         return "none yet"
@@ -413,6 +424,58 @@ def google_callback(code: str = "", state: str = "", error: str = ""):
         email = gapps.finish_auth(code, state)
         emit({"type": "notice", "text": f"Google connected: {email}"})
         emit({"type": "google"})
+        return HTMLResponse(page.format(f"Connected {email}", "You can close this tab and go back to Jarvis."))
+    except Exception as e:
+        return HTMLResponse(page.format("Couldn't connect", str(e)))
+
+
+# ---------- Microsoft To Do ----------
+class MsClientIn(BaseModel):
+    client_id: str
+
+
+@app.get("/api/microsoft")
+def ms_status():
+    import mstodo
+    return mstodo.status()
+
+
+@app.post("/api/microsoft/client")
+def ms_client(body: MsClientIn):
+    import mstodo
+    try:
+        mstodo.save_client(body.client_id)
+        return {"ok": True, **mstodo.status()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/microsoft/connect")
+def ms_connect():
+    import mstodo
+    try:
+        url = mstodo.auth_url()
+        if os.name == "nt":
+            os.startfile(url)
+        else:
+            import webbrowser
+            webbrowser.open(url)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/oauth/microsoft/callback")
+def ms_callback(code: str = "", state: str = "", error: str = "", error_description: str = ""):
+    import mstodo
+    page = ("<html><body style='background:#05070d;color:#e6ecff;font-family:Segoe UI;display:grid;"
+            "place-items:center;height:100vh'><div style='text-align:center'><h2>{}</h2><p>{}</p></div></body></html>")
+    if error:
+        return HTMLResponse(page.format("Microsoft sign-in didn't finish", error_description or error))
+    try:
+        email = mstodo.finish_auth(code, state)
+        emit({"type": "notice", "text": f"Microsoft To Do connected: {email}"})
+        emit({"type": "google"})  # refreshes the Accounts panel
         return HTMLResponse(page.format(f"Connected {email}", "You can close this tab and go back to Jarvis."))
     except Exception as e:
         return HTMLResponse(page.format("Couldn't connect", str(e)))
