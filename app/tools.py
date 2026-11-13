@@ -163,6 +163,16 @@ TOOLS = [
             "required": ["task_id"]},
     },
     {
+        "name": "aircon",
+        "description": "Control or check the AC. No arguments = report its state. power 'on'/'off'; temp 16-30 "
+                       "(for 'warmer/cooler' check state first, then set +/-1); mode cool/heat/auto/fan/dry; "
+                       "fan auto/low/mid/high.",
+        "input_schema": {"type": "object", "properties": {
+            "power": {"type": "string", "enum": ["on", "off"]}, "temp": {"type": "integer"},
+            "mode": {"type": "string", "enum": ["cool", "heat", "auto", "fan", "dry"]},
+            "fan": {"type": "string", "enum": ["auto", "low", "mid", "high"]}}},
+    },
+    {
         "name": "remember",
         "description": "Save a lasting fact or preference about the user for future conversations.",
         "input_schema": {"type": "object", "properties": {
@@ -260,6 +270,10 @@ def run_tool(name: str, args: dict) -> str:
 
         if name == "send_to_claude":
             return send_to_claude(args["message"], args.get("send", True))
+
+        if name == "aircon":
+            import aircon
+            return aircon.ac(**args)
 
         if name in ("todo_list", "todo_add", "todo_complete"):
             import mstodo

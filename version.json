@@ -1,10 +1,14 @@
 {
- "version": 7,
+ "version": 8,
  "min_launcher": 1,
  "files": [
   {
    "path": "PRIVACY.md",
    "sha256": "dc3fabba9522d3c74b411d6f89765013ea2810ca41a813d1929c5cfcfc7645da"
+  },
+  {
+   "path": "aircon.py",
+   "sha256": "86fb30888d85a8f8fa4d197252741399b148632ccd6e0c5a60be23244395fb10"
   },
   {
    "path": "gapps.py",
@@ -24,7 +28,7 @@
   },
   {
    "path": "tools.py",
-   "sha256": "afb5a9821a4d5cad29d61ea43f7657ca19298c5ad8b3b5af9d5b8e47d95a636c"
+   "sha256": "dc3b9bc87a19c84c962044ebe01b6e2633a28fe3f122d103a477ebeecc712b97"
   },
   {
    "path": "updater.py",
