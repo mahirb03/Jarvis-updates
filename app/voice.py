@@ -125,6 +125,7 @@ class Voice:
         self._echo = deque(maxlen=150)      # recent mic/speaker loudness ratios while Jarvis talks (~12 s)
         self._audio_started = 0.0
         self._streams = []
+        self._unclear = 0
 
     # ---------- setup ----------
     def start(self):
@@ -243,12 +244,15 @@ class Voice:
         if not BARGE_IN:
             return
         now = time.time()
-        if self.ww is not None:  # "Jarvis" always cuts in
-            scores = self.ww.predict(a)
-            if scores and max(scores.values()) > WAKE_THRESHOLD:
-                self.ww.reset()
-                return self._barge(wake=True)
         ref = max((r for t, r in self._out_hist if now - t < 0.6), default=0.0)
+        if self.ww is not None:  # saying "Jarvis" cuts in - but not when it's Jarvis saying its own name
+            scores = self.ww.predict(a)
+            if scores and max(scores.values()) > max(WAKE_THRESHOLD, 0.8):
+                self.ww.reset()
+                eg = float(np.percentile(self._echo, 90)) if len(self._echo) >= 12 else 0.6
+                if rms > eg * ref * 1.5 + self.noise * 2:
+                    return self._barge(wake=True)
+                log("ignored wake word (it was Jarvis's own voice)")
         if ref < 300:  # nothing loud playing right now
             self._barge_hits.append(False)
             return
@@ -324,10 +328,12 @@ class Voice:
             if STOP_ONLY.match(text or ""):  # "stop" / "wait" just shuts Jarvis up
                 self.emit({"type": "state", "state": "idle"})
             elif text and not re.fullmatch(r"[\W_]*(thank you|thanks for watching|you)?[\W_]*", text, re.I):
+                self._unclear = 0
                 if END_PHRASES.match(text):
                     self.in_conversation = False
                 self.emit({"type": "heard", "text": text, "stt_ms": ms})
-            elif self.in_conversation:  # couldn't make anything out: keep listening instead of dropping off
+            elif self.in_conversation and self._unclear < 2:  # couldn't make it out: keep listening a bit
+                self._unclear += 1
                 self._followup_limit = FOLLOW_UP_SECONDS
                 self._begin("followup")
             else:
