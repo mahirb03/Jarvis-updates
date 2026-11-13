@@ -1,5 +1,5 @@
 {
- "version": 11,
+ "version": 12,
  "min_launcher": 1,
  "files": [
   {
@@ -40,7 +40,7 @@
   },
   {
    "path": "voice.py",
-   "sha256": "9590e3e8db2e54e603eb25a119bc8242544e02037af0498a5b58efa0f5acd65a"
+   "sha256": "da1d8b6ab73e01f7b6888b64d859a405cf0b88c05cb8ec270f48b18209dd316b"
   },
   {
    "path": "static/index.html",

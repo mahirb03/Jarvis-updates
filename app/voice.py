@@ -122,7 +122,7 @@ class Voice:
         self._preroll = deque(maxlen=4)     # last ~0.3 s of mic audio, so a barge-in keeps your first word
         self._out_hist = deque(maxlen=30)   # (time, loudness) of what Jarvis is playing
         self._barge_hits = deque(maxlen=5)
-        self.echo_gain = 0.5                # how loud Jarvis's own voice comes back through the mic
+        self._echo = deque(maxlen=150)      # recent mic/speaker loudness ratios while Jarvis talks (~12 s)
         self._audio_started = 0.0
         self._streams = []
 
@@ -249,20 +249,27 @@ class Voice:
                 self.ww.reset()
                 return self._barge(wake=True)
         ref = max((r for t, r in self._out_hist if now - t < 0.6), default=0.0)
-        if ref > 300:  # learn how much of Jarvis's own voice leaks into the mic
-            ratio = rms / ref
-            eg = self.echo_gain
-            self.echo_gain = 0.85 * eg + 0.15 * ratio if ratio < eg else 0.985 * eg + 0.015 * min(ratio, 3.0)
-        if now - self._audio_started < 0.4:  # still calibrating on the first words
+        if ref < 300:  # nothing loud playing right now
+            self._barge_hits.append(False)
+            return
+        # How loud Jarvis's own voice comes back through the mic: a high percentile of recent frames,
+        # so pauses between words can't drag it down and make Jarvis "hear" itself.
+        eg = float(np.percentile(self._echo, 90)) if len(self._echo) >= 12 else 0.6
+        thresh = max(eg * ref * BARGE_FACTOR + self.noise * 2, self.noise * 4, 900)
+        hit = rms > thresh
+        if not hit:
+            self._echo.append(rms / ref)
+        if now - self._audio_started < 0.5:  # still calibrating on the first words
             self._barge_hits.clear()
             return
-        thresh = max(self.echo_gain * ref * BARGE_FACTOR + self.noise * 2, self.noise * 4, 700)
-        self._barge_hits.append(rms > thresh)
+        self._barge_hits.append(hit)
         if sum(self._barge_hits) >= 4:  # ~0.3 s of you clearly talking over it
+            log(f"barge-in: mic {rms:.0f} vs threshold {thresh:.0f} (echo {eg:.2f}, speaker {ref:.0f})")
             self._barge()
 
     def _barge(self, wake=False):
-        log(f"barge-in ({'wake word' if wake else 'voice'}), echo gain {self.echo_gain:.2f}")
+        if wake:
+            log("barge-in: wake word")
         self.stop_speaking = True
         self._cancel_streams()
         self._barge_hits.clear()
@@ -297,6 +304,7 @@ class Voice:
             self.emit({"type": "state", "state": "transcribing"})
             threading.Thread(target=self._transcribe, args=(np.concatenate(buf),), daemon=True).start()
         else:
+            log(f"listen ({mode}): heard nothing (noise {self.noise:.0f}) -> standby")
             if mode == "followup":
                 self.in_conversation = False  # nothing said: conversation's over
             self.emit({"type": "state", "state": "idle"})
@@ -319,6 +327,9 @@ class Voice:
                 if END_PHRASES.match(text):
                     self.in_conversation = False
                 self.emit({"type": "heard", "text": text, "stt_ms": ms})
+            elif self.in_conversation:  # couldn't make anything out: keep listening instead of dropping off
+                self._followup_limit = FOLLOW_UP_SECONDS
+                self._begin("followup")
             else:
                 self.emit({"type": "state", "state": "idle"})
         except Exception as e:
