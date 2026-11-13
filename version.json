@@ -1,5 +1,5 @@
 {
- "version": 9,
+ "version": 10,
  "min_launcher": 1,
  "files": [
   {
@@ -28,7 +28,7 @@
   },
   {
    "path": "server.py",
-   "sha256": "ea8eca7f2704d54755fd78a23f000293f1597fb08f909a63afb9aa6202b44498"
+   "sha256": "644445298bf41358b54a648be86ab858924e8eb914f4c2a88c3ffe81509827ca"
   },
   {
    "path": "tools.py",
@@ -40,11 +40,11 @@
   },
   {
    "path": "voice.py",
-   "sha256": "99fa0d2a60b07550e2c1681f1aaa11d6364a72226306638ef544cfc3f6899c4f"
+   "sha256": "ad379bdff4c902f0a4d3cae42c604c0b4e1aa6c8cba791d9c91bd3a135fcaa3a"
   },
   {
    "path": "static/index.html",
-   "sha256": "2b2e055b9b56efa99d8d675aa1f28a822b2d88326eca7688ea3b9c49d35f48de"
+   "sha256": "1238ac5af728c30e493fb4eb1bce9014d773aeb584b66344ce74a585a2a43b87"
   },
   {
    "path": "static/logo.png",

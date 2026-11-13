@@ -18,7 +18,7 @@ from paths import APP_DIR, ENV_FILE, load_settings, log, save_settings
 load_dotenv(ENV_FILE)
 
 from tools import TOOLS, describe_action, load_memory, needs_approval, run_tool  # noqa: E402
-from voice import PRESETS, Voice, current_preset  # noqa: E402
+from voice import PRESETS, SentenceStream, Voice, current_preset  # noqa: E402
 
 client = anthropic.Anthropic() if os.getenv("ANTHROPIC_API_KEY") else None
 MODELS = {
@@ -102,7 +102,7 @@ def system_prompt() -> str:
     mem_text = "\n".join(f"- {m['note']}" for m in mem[-50:]) or "(nothing saved yet)"
     p = current_preset()
     return f"""You are {p['name']}, {USER_NAME}'s personal AI assistant, running on his Windows PC. Your manner: {p['about']}, quietly witty, never gushing.
-Now: {datetime.now().strftime('%A %d %B %Y, %I:%M %p')}. Home folder: {Path.home()}.
+Home folder: {Path.home()}.
 
 How to behave:
 - Replies are usually read aloud, so keep them short and conversational: 1-3 sentences unless asked for detail. No markdown tables or long lists in spoken replies.
@@ -127,6 +127,12 @@ Microsoft To Do accounts connected: {_ms_accounts()}
 
 What you know about {USER_NAME}:
 {mem_text}"""
+
+
+def system_blocks() -> list:
+    """Big stable part is cached (much faster first token); the clock goes in a small block after it."""
+    return [{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": f"Now: {datetime.now().strftime('%A %d %B %Y, %I:%M %p')}."}]
 
 
 def _google_accounts() -> str:
@@ -156,7 +162,7 @@ def pick_tier(text: str) -> str:
     if re.search(r"\b(use haiku|quick mode)\b", t):
         return "fast"
     # Short, simple commands go straight to Haiku - saves a round trip
-    if len(t.split()) <= 12 and not HEAVY.search(t):
+    if len(t.split()) <= 18 and not HEAVY.search(t):
         return "fast"
     try:
         r = client.messages.create(model=MODELS["fast"], max_tokens=5, system=ROUTER_PROMPT,
@@ -182,7 +188,7 @@ def text_of(content) -> str:
     return "".join(getattr(b, "text", "") for b in content if getattr(b, "type", "") == "text").strip()
 
 
-def agent_loop(s: dict) -> dict:
+def agent_loop(s: dict, say: SentenceStream | None = None) -> dict:
     """Call Claude until it gives a final answer, or pause when an action needs approval."""
     model = MODELS[s["tier"]]
     for _ in range(25):
@@ -193,8 +199,16 @@ def agent_loop(s: dict) -> dict:
         else:
             s["messages"] = trim(s["messages"])
             t0 = time.time()
-            resp = client.messages.create(model=model, max_tokens=4096, system=system_prompt(),
-                                          tools=TOOLS, messages=s["messages"])
+            kw = dict(model=model, max_tokens=4096, system=system_blocks(), tools=TOOLS, messages=s["messages"])
+            if say:  # speak sentences as they arrive instead of waiting for the whole reply
+                with client.messages.stream(**kw) as stream:
+                    for ev in stream:
+                        if ev.type == "content_block_delta" and getattr(ev.delta, "type", "") == "text_delta":
+                            say.push(ev.delta.text)
+                    resp = stream.get_final_message()
+                say.flush()
+            else:
+                resp = client.messages.create(**kw)
             s["timings"].append(f"{s['tier']} {int((time.time() - t0) * 1000)}ms")
             s["messages"].append({"role": "assistant", "content": resp.content})
             s["actions"] += [f"web_search({b.input.get('query', '')})" for b in resp.content
@@ -247,6 +261,7 @@ class ChatIn(BaseModel):
     session: str
     text: str
     client: str | None = None  # the current app sends "jarvis-app"; old browser tabs don't
+    voice: bool = False        # spoken request: stream the answer straight into the voice
 
 OLD_TAB = {"reply": "This is an old Jarvis browser tab. Please close it. Jarvis now runs in its own window.",
            "tier": "fast"}
@@ -278,8 +293,18 @@ def chat(body: ChatIn):
         s["timings"].append(f"route {int((time.time() - t0) * 1000)}ms")
         s["actions"] = []
         s["messages"].append({"role": "user", "content": body.text})
-        return agent_loop(s)
-    return run_turn(s, go)
+        return agent_loop(s, say)
+
+    st = voice.begin() if body.voice and voice.ready else None
+    say = SentenceStream(voice, st) if st else None
+    try:
+        res = run_turn(s, go)
+    finally:
+        if st:
+            voice.end(st)
+    if st and st["chars"] and not res.get("approval"):
+        res["spoken"] = True
+    return res
 
 
 @app.post("/api/approve")

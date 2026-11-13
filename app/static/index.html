@@ -270,21 +270,23 @@ function handle(res) {
     const m = document.createElement('div'); m.className = 'meta'; m.textContent = (res.ms/1000).toFixed(1) + 's'; d.appendChild(m);
   }
   $('log').scrollTop = 1e9;
+  if (res.spoken) { if (!voiceSpeaking) setState('idle'); return; }  // already being spoken as it was written
   setState('idle');
   say(res.reply);
 }
 
-async function send(text) {
+let voiceSpeaking = false;
+async function send(text, spoken) {
   text = (text || '').trim(); if (!text) return;
   if (pendingApproval && /^(yes|yeah|yep|yup|do it|go ahead|approve|ok|okay|sure|confirm)\b/i.test(text)) return answerApproval(true);
   if (pendingApproval && /^(no|nope|don't|do not|cancel|deny|stop)\b/i.test(text)) return answerApproval(false);
-  if (busy) { queued = text; addMsg('note', `queued: "${text}"`); return; }
+  if (busy) { queued = [text, spoken]; addMsg('note', `queued: "${text}"`); return; }
   addMsg('you', text); $('heard').textContent = text;
   busy = true; setState('thinking');
-  try { handle(await post('/api/chat', {session: SESSION, text, client: 'jarvis-app'})); }
+  try { handle(await post('/api/chat', {session: SESSION, text, client: 'jarvis-app', voice: !!(spoken && speakOn)})); }
   catch (e) { addMsg('note', 'Lost connection to the Jarvis server.'); setState('idle'); }
   busy = false;
-  if (queued) { const q = queued; queued = null; send(q); }
+  if (queued) { const q = queued; queued = null; send(...q); }
 }
 async function answerApproval(ok) {
   if (!pendingApproval) return;
@@ -314,13 +316,14 @@ function connect() {
     const m = JSON.parse(ev.data);
     if (m.type === 'level') targetLevel = m.v;
     else if (m.type === 'state') {
+      if (m.state === 'speaking') voiceSpeaking = true;
       if (m.state === 'idle' && (busy || pendingApproval)) setState(pendingApproval ? 'approval' : 'thinking');
       else if (!busy || m.state !== 'idle') setState(m.state);
       if (m.state !== 'listening') pttHeld = false;
     }
-    else if (m.type === 'heard') { pttHeld = false; send(m.text); }
+    else if (m.type === 'heard') { pttHeld = false; send(m.text, true); }
     else if (m.type === 'google') { if (document.querySelector('.gpanel')) googlePanel(); }
-    else if (m.type === 'speak_done') { if (!busy) setState(pendingApproval ? 'approval' : 'idle'); }
+    else if (m.type === 'speak_done') { voiceSpeaking = false; if (!busy) setState(pendingApproval ? 'approval' : 'idle'); }
     else if (m.type === 'notice') {
       addMsg('note', m.text);
       if (/Voice ready/.test(m.text)) { $('voiceDot').classList.add('on'); $('voiceChip').textContent = 'voice on'; }
