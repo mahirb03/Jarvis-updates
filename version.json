@@ -1,7 +1,11 @@
 {
- "version": 3,
+ "version": 4,
  "min_launcher": 1,
  "files": [
+  {
+   "path": "PRIVACY.md",
+   "sha256": "dc3fabba9522d3c74b411d6f89765013ea2810ca41a813d1929c5cfcfc7645da"
+  },
   {
    "path": "gapps.py",
    "sha256": "2d3576c42a277cbb6753713036f2156aee44243fd913a506a98096c45263deb2"
