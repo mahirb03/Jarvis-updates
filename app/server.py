@@ -67,6 +67,7 @@ def emit(msg: dict):
 
 
 voice = Voice(emit)
+relay = None
 
 
 @app.on_event("startup")
@@ -75,6 +76,12 @@ async def _startup():
     loop = asyncio.get_running_loop()
     if os.getenv("VOICE", "true").lower() == "true":
         voice.start()
+    global relay
+    from relay import Relay
+    relay = Relay(lambda text: chat(ChatIn(session="phone", text=text, client="jarvis-app")),
+                  lambda aid, ok: approve(ApproveIn(session="phone", id=aid or "", approve=ok)),
+                  emit)
+    relay.start()
 
 
 @app.websocket("/ws")
@@ -298,6 +305,8 @@ class PttIn(BaseModel):
 class SettingsIn(BaseModel):
     anthropic_key: str | None = None
     voice_preset: str | None = None
+    relay_url: str | None = None
+    relay_token: str | None = None
 
 
 @app.post("/api/speak")
@@ -336,6 +345,10 @@ def settings(body: SettingsIn):
         client = anthropic.Anthropic()
     if body.voice_preset in PRESETS:
         save_settings(voice_preset=body.voice_preset)
+    if body.relay_url is not None:
+        save_settings(relay_url=body.relay_url.strip().rstrip("/"))
+    if body.relay_token:
+        save_settings(relay_token=body.relay_token.strip())
     return health()
 
 
@@ -348,7 +361,8 @@ def health():
     except Exception:
         pass
     return {"ok": True, "models": MODELS, "key_set": client is not None, "voice_ready": voice.ready,
-            "preset": current_preset()["key"], "presets": list(PRESETS), "version": v.get("version", "dev")}
+            "preset": current_preset()["key"],
+            "relay": {"url": load_settings().get("relay_url", ""), "connected": bool(relay and relay.ok)}, "presets": list(PRESETS), "version": v.get("version", "dev")}
 
 
 @app.post("/api/update")

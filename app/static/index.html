@@ -389,7 +389,18 @@ async function googlePanel() {
       addMsg('note', r.ok ? 'Microsoft sign-in opened in your browser.' : r.error);
     };
   }
-  d.appendChild(gb); d.appendChild(mb); $('log').scrollTop = 1e9;
+  // Phone link
+  const h = await fetch('/api/health').then(r => r.json());
+  const pb = document.createElement('div'); pb.className = 'gbox';
+  pb.innerHTML = '<b>iPhone link</b><div></div><input placeholder="Relay address (https://jarvis-relay….workers.dev)"><input type="password" placeholder="Passphrase"><button>Save</button>';
+  pb.querySelector('div').textContent = h.relay && h.relay.connected ? '✓ Connected' : (h.relay && h.relay.url ? 'Not connected yet' : 'Not set up');
+  pb.querySelectorAll('input')[0].value = (h.relay && h.relay.url) || '';
+  pb.querySelector('button').onclick = async () => {
+    const [u, t] = pb.querySelectorAll('input');
+    await post('/api/settings', {relay_url: u.value, relay_token: t.value || null});
+    addMsg('note', 'Saved. Connecting to the phone relay…'); setTimeout(googlePanel, 6000);
+  };
+  d.appendChild(gb); d.appendChild(mb); d.appendChild(pb); $('log').scrollTop = 1e9;
 }
 $('gBtn').onclick = googlePanel;
 $('updBtn').onclick = async () => {
