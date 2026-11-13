@@ -80,7 +80,7 @@ async def _startup():
     from relay import Relay
     relay = Relay(lambda text: chat(ChatIn(session="phone", text=text, client="jarvis-app")),
                   lambda aid, ok: approve(ApproveIn(session="phone", id=aid or "", approve=ok)),
-                  emit)
+                  emit, tts=voice.mp3)
     relay.start()
 
 

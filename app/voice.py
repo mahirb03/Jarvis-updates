@@ -356,6 +356,11 @@ class Voice:
             st["cancel"] = True
             st["q"].put(None)
 
+    def mp3(self, text: str) -> bytes:
+        """The reply as an mp3 in the current voice, for the phone app."""
+        t = clean_for_speech(text)
+        return asyncio.run(self._edge_tts(t, current_preset())) if t else b""
+
     async def _edge_tts(self, text, p):
         import edge_tts
         out = bytearray()

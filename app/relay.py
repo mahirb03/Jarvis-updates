@@ -4,6 +4,7 @@ Checks in every few seconds, picks up commands sent from the iPhone (the relay d
 runs them through the normal Jarvis brain, and posts the answers back. Also keeps memory in sync
 between the Mac and the PC.
 """
+import base64
 import json
 import os
 import platform
@@ -25,8 +26,8 @@ def _cfg():
 
 
 class Relay:
-    def __init__(self, handle_chat, handle_approve, emit):
-        self.handle_chat, self.handle_approve, self.emit = handle_chat, handle_approve, emit
+    def __init__(self, handle_chat, handle_approve, emit, tts=None):
+        self.handle_chat, self.handle_approve, self.emit, self.tts = handle_chat, handle_approve, emit, tts
         self.ok = False
         self._last_mem = 0
 
@@ -84,6 +85,14 @@ class Relay:
             extra.update(approval_id=res["approval"]["id"], description=res["approval"]["description"])
             if c["kind"] == "approve":  # a second approval in a row: keep it on the original command
                 body["ref"] = c["ref"]
+        if self.tts and res.get("reply") and not res.get("approval"):
+            try:  # the reply in Jarvis's own voice, so the phone sounds the same as the PC
+                mp3 = self.tts(res["reply"])
+                if mp3:
+                    h.post("/api/audio", json={"id": c["ref"] if c["kind"] == "approve" else c["id"],
+                                               "b64": base64.b64encode(mp3).decode()})
+            except Exception as e:
+                log(f"relay: voice for phone failed: {e}")
         h.post("/api/result", json=body)
         if res.get("reply"):
             self.emit({"type": "notice", "text": f"📱 replied: {res['reply'][:200]}"})

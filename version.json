@@ -1,5 +1,5 @@
 {
- "version": 10,
+ "version": 11,
  "min_launcher": 1,
  "files": [
   {
@@ -24,11 +24,11 @@
   },
   {
    "path": "relay.py",
-   "sha256": "50b5dab0e1f13b64b3ede8de3854cade96a0c3ce87fb9189e2a64c6d4f22d689"
+   "sha256": "12a97742534a60d44ba89c1d4b8f7c724ff81a271b89ef3cbb6cb4b157650a3a"
   },
   {
    "path": "server.py",
-   "sha256": "644445298bf41358b54a648be86ab858924e8eb914f4c2a88c3ffe81509827ca"
+   "sha256": "23b6b747f7a302dff2f5d01935a28bc0f635806988fea7c1c3446348fd3a99c4"
   },
   {
    "path": "tools.py",
@@ -40,7 +40,7 @@
   },
   {
    "path": "voice.py",
-   "sha256": "ad379bdff4c902f0a4d3cae42c604c0b4e1aa6c8cba791d9c91bd3a135fcaa3a"
+   "sha256": "9590e3e8db2e54e603eb25a119bc8242544e02037af0498a5b58efa0f5acd65a"
   },
   {
    "path": "static/index.html",
