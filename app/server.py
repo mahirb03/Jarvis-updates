@@ -1,6 +1,7 @@
 """Jarvis server: routes each request to Haiku / Sonnet / Opus and runs the tool loop."""
 import asyncio
 import os
+import sys
 import re
 import time
 from datetime import datetime
@@ -101,7 +102,7 @@ def system_prompt() -> str:
     mem = load_memory()
     mem_text = "\n".join(f"- {m['note']}" for m in mem[-50:]) or "(nothing saved yet)"
     p = current_preset()
-    return f"""You are {p['name']}, {USER_NAME}'s personal AI assistant, running on his Windows PC. Your manner: {p['about']}, quietly witty, never gushing.
+    return f"""You are {p['name']}, {USER_NAME}'s personal AI assistant, running on his {"Mac" if sys.platform == "darwin" else "Windows PC"}. Your manner: {p['about']}, quietly witty, never gushing.
 Home folder: {Path.home()}.
 
 How to behave:
@@ -110,7 +111,7 @@ How to behave:
 - Act, don't ask: if a request is clear, use your tools and then report what you did.
 - For any action (opening, running, checking, saving), you MUST actually call a tool. Never say you did something unless a tool call in this turn did it and succeeded. If a tool errors, say so plainly.
 - Spoken input comes from speech recognition and may have small mistakes ("open spot if I" = "open Spotify"). Use common sense.
-- The PC runs Windows; use PowerShell syntax.
+- {"This is a Mac: run_command uses zsh; open apps with open_app; use osascript for app control (Music, volume, Finder)." if sys.platform == "darwin" else "The PC runs Windows; run_command uses PowerShell syntax."}
 - Risky actions (deleting, installing, writing files, changing settings) go to {USER_NAME} for approval automatically, so just call the tool.
 - You ARE Claude (Anthropic's model), running in the cloud through {USER_NAME}'s API key, and you can search the web yourself. So answer questions, look things up (restaurants, news, prices) and do tasks directly with your own tools. Never say you can't reach Claude or the cloud.
 - `send_to_claude` only types a message into the separate Claude desktop chat app on this PC, where {USER_NAME} runs long projects (coding, documents). Use it ONLY when he explicitly says "tell Claude / ask Claude / send this to Claude" about work in that app; then pass the request on clearly with useful detail.
@@ -408,8 +409,11 @@ def restart():
     def later():
         import subprocess
         time.sleep(0.5)
-        args = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, sys.argv[0]]
-        subprocess.Popen(args + ["--restarted"], close_fds=True)
+        if sys.platform == "darwin" and os.getenv("JARVIS_APP_BUNDLE"):  # reopen the Mac app properly
+            subprocess.Popen(["open", "-n", os.environ["JARVIS_APP_BUNDLE"], "--args", "--restarted"])
+        else:
+            args = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, sys.argv[0]]
+            subprocess.Popen(args + ["--restarted"], close_fds=True)
         os._exit(0)
     threading.Thread(target=later, daemon=True).start()
     return {"ok": True}

@@ -1,5 +1,5 @@
 {
- "version": 13,
+ "version": 14,
  "min_launcher": 1,
  "files": [
   {
@@ -28,11 +28,11 @@
   },
   {
    "path": "server.py",
-   "sha256": "23b6b747f7a302dff2f5d01935a28bc0f635806988fea7c1c3446348fd3a99c4"
+   "sha256": "ded821a12b73b89ec40a1ed46c081f6dfd45f1ac32e1d3991ad1bb467e88dc1f"
   },
   {
    "path": "tools.py",
-   "sha256": "dc3b9bc87a19c84c962044ebe01b6e2633a28fe3f122d103a477ebeecc712b97"
+   "sha256": "d9e803cb7e04230ac824a047074bdb95bae2f4c9d45c75a330c0f33c51b79911"
   },
   {
    "path": "updater.py",

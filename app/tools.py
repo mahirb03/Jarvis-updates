@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -12,28 +13,41 @@ from bs4 import BeautifulSoup
 from paths import MEMORY_FILE, save_settings
 MAX_OUT = 8000
 
+MAC = sys.platform == "darwin"
+SHELL = "zsh (macOS)" if MAC else "PowerShell (Windows)"
+
 # Commands that only read things / open things run without asking.
-SAFE_PREFIXES = ("get-", "test-path", "start-process", "select-string", "measure-object",
-                 "resolve-path", "where.exe", "ollama list", "ollama ps", "nvidia-smi")
-RISKY_WORDS = ("remove", "delete", "del ", "rm ", "rmdir", "format", "stop-", "kill", "set-",
-               "new-", "move", "rename", "copy", "out-file", ">", "invoke-", "iex", "shutdown",
-               "restart", "reg ", "install", "uninstall", "winget", "pip ", "npm ", "git push")
+if MAC:
+    SAFE_PREFIXES = ("ls", "cat ", "pwd", "whoami", "date", "open ", "mdfind", "find ", "grep ", "head ",
+                     "tail ", "wc ", "df ", "du ", "uptime", "sw_vers", "system_profiler", "pmset -g",
+                     "ps ", "which ", "echo ", "osascript -e 'get volume", "git status", "git log")
+    RISKY_WORDS = ("rm ", "rmdir", "sudo", "mv ", "cp ", ">", "kill", "shutdown", "reboot", "defaults write",
+                   "brew install", "brew uninstall", "pip ", "npm ", "git push", "chmod", "chown", "launchctl",
+                   "diskutil", "curl ", "| sh", "| bash")
+else:
+    SAFE_PREFIXES = ("get-", "test-path", "start-process", "select-string", "measure-object",
+                     "resolve-path", "where.exe", "ollama list", "ollama ps", "nvidia-smi")
+    RISKY_WORDS = ("remove", "delete", "del ", "rm ", "rmdir", "format", "stop-", "kill", "set-",
+                   "new-", "move", "rename", "copy", "out-file", ">", "invoke-", "iex", "shutdown",
+                   "restart", "reg ", "install", "uninstall", "winget", "pip ", "npm ", "git push")
 
 TOOLS = [
     {"type": "web_search_20250305", "name": "web_search", "max_uses": 5},
     {
-        "name": "run_powershell",
-        "description": "Run a PowerShell command on the user's Windows PC and return its output. "
-                       "Use for checking system info, files, running scripts, git, etc.",
+        "name": "run_command",
+        "description": f"Run a {SHELL} command on this computer and return its output. "
+                       "Use for checking system info, files, running scripts, git, etc."
+                       + (" AppleScript works via osascript (e.g. Music, volume, Finder)." if MAC else ""),
         "input_schema": {"type": "object", "properties": {
-            "command": {"type": "string", "description": "The PowerShell command"},
+            "command": {"type": "string", "description": f"The {SHELL} command"},
             "cwd": {"type": "string", "description": "Optional working directory"}},
             "required": ["command"]},
     },
     {
         "name": "open_app",
-        "description": "Open an app, file, folder, or URL on the PC (e.g. 'spotify', 'notepad', "
-                       "'C:\\Users\\mahir\\Documents', 'https://youtube.com').",
+        "description": "Open an app, file, folder, or URL on this computer (e.g. 'Spotify', "
+                       + ("'Notes', '~/Documents', " if MAC else "'notepad', 'C:\\Users\\mahir\\Documents', ")
+                       + "'https://youtube.com').",
         "input_schema": {"type": "object", "properties": {
             "target": {"type": "string"}}, "required": ["target"]},
     },
@@ -196,7 +210,7 @@ def needs_approval(name: str, args: dict) -> bool:
         return False
     if name == "write_file":
         return True
-    if name == "run_powershell":
+    if name == "run_command":
         cmd = args.get("command", "").strip().lower()
         if any(w in cmd for w in RISKY_WORDS):
             return True
@@ -216,7 +230,7 @@ def describe_action(name: str, args: dict) -> str:
         return f"Add to calendar{acct}: {args.get('summary')}\nWhen: {args.get('start')} to {args.get('end') or '+1h'}{extra}{inv}"
     if name == "calendar_move":
         return f"Move event {args.get('event_id')}{acct} to {args.get('start')}"
-    if name == "run_powershell":
+    if name == "run_command":
         return f"Run this command:\n{args.get('command')}"
     if name == "write_file":
         return f"Write {len(args.get('content', ''))} characters to {args.get('path')}"
@@ -232,12 +246,19 @@ def load_memory() -> list:
 
 def run_tool(name: str, args: dict) -> str:
     try:
-        if name == "run_powershell":
-            r = subprocess.run(["powershell", "-NoProfile", "-Command", args["command"]],
+        if name == "run_command":
+            shell = ["/bin/zsh", "-lc"] if MAC else ["powershell", "-NoProfile", "-Command"]
+            r = subprocess.run(shell + [args["command"]],
                                capture_output=True, text=True, timeout=120,
                                cwd=args.get("cwd") or None)
             out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
             return _cap(out.strip() or f"(no output, exit code {r.returncode})")
+
+        if name == "open_app" and MAC:
+            t = os.path.expanduser(args["target"])
+            is_thing = re.match(r"^[a-z]+://", t) or os.path.exists(t)
+            r = subprocess.run(["open", t] if is_thing else ["open", "-a", t], capture_output=True, text=True)
+            return f"Opened {args['target']}" if r.returncode == 0 else f"Error: {r.stderr.strip()}"
 
         if name == "open_app":
             target = args["target"].replace("'", "''")
@@ -344,8 +365,27 @@ def _focus(hwnd):
         win32gui.BringWindowToTop(hwnd)
 
 
+def _send_to_claude_mac(message: str, send: bool) -> str:
+    """Mac: put the text on the clipboard, bring Claude forward, paste, press Return.
+    Needs Jarvis allowed under System Settings > Privacy & Security > Accessibility."""
+    subprocess.run(["pbcopy"], input=message, text=True)
+    script = ('tell application "Claude" to activate\n'
+              'delay 0.8\n'
+              'tell application "System Events" to keystroke "v" using command down\n'
+              + ('delay 0.4\ntell application "System Events" to key code 36\n' if send else ""))
+    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=20)
+    if r.returncode != 0:
+        if "not allowed" in r.stderr or "1002" in r.stderr or "assistive" in r.stderr:
+            return ("Error: macOS blocked the typing. Allow Jarvis in System Settings > Privacy & Security > "
+                    "Accessibility, then ask again.")
+        return f"Error: {r.stderr.strip()}"
+    return f"Sent to Claude: {message[:120]}" if send else "Typed into Claude (not sent yet) so the user can review it."
+
+
 def send_to_claude(message: str, send: bool = True) -> str:
     """Paste a message into the Claude desktop app's chat box and (optionally) press Enter."""
+    if MAC:
+        return _send_to_claude_mac(message, send)
     import time
     import win32clipboard as cb
     import win32gui

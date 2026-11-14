@@ -1,0 +1,14 @@
+anthropic>=0.40
+fastapi
+uvicorn[standard]
+python-dotenv
+httpx
+beautifulsoup4
+numpy
+sounddevice
+faster-whisper
+openwakeword>=0.6.0
+edge-tts
+miniaudio
+pywebview
+pywinauto; sys_platform == "win32"
